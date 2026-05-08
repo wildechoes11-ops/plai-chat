@@ -328,12 +328,12 @@ async def startup():
         flush=True
     )
 
-    # Run init in background
+    # Initialize in background
     asyncio.create_task(
         initialize_app()
     )
 
-    # Background refresh loop
+    # Start refresh loop
     asyncio.create_task(
         cookie_refresh_loop()
     )
@@ -580,12 +580,16 @@ async def chat_completions():
 
 if __name__ == "__main__":
 
-    app.run(
-        host="0.0.0.0",
-        port=int(
-            os.environ.get(
-                "PORT",
-                10000
-            )
-        )
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config
+
+    config = Config()
+
+    config.bind = [
+        f"0.0.0.0:{os.environ.get('PORT', '10000')}"
+    ]
+
+    asyncio.run(
+        serve(app, config)
     )
+
