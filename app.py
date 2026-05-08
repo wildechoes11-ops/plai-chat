@@ -27,6 +27,9 @@ cookie_created_at = 0
 
 chat_app = None
 
+# Prevent multiple simultaneous init calls
+initializing_lock = asyncio.Lock()
+
 app = Quart(__name__)
 
 
@@ -272,15 +275,27 @@ async def ensure_app():
 
     global chat_app
 
-    if chat_app is None:
+    if chat_app is not None:
+        return
+
+    async with initializing_lock:
+
+        # double-check
+        if chat_app is not None:
+            return
+
+        print(
+            "\n========== LAZY INITIALIZATION ==========",
+            flush=True
+        )
 
         await initialize_app()
 
-    if chat_app is None:
+        if chat_app is None:
 
-        raise Exception(
-            "Failed to initialize app"
-        )
+            raise Exception(
+                "Failed to initialize app"
+            )
 
 
 # =========================
@@ -294,6 +309,9 @@ async def cookie_refresh_loop():
         try:
 
             await asyncio.sleep(300)
+
+            if chat_app is None:
+                continue
 
             if cookies_expired():
 
@@ -328,18 +346,13 @@ async def startup():
         flush=True
     )
 
-    # Initialize in background
-    asyncio.create_task(
-        initialize_app()
-    )
-
-    # Start refresh loop
+    # ONLY refresh loop
     asyncio.create_task(
         cookie_refresh_loop()
     )
 
     print(
-        "Startup tasks launched",
+        "Refresh loop started",
         flush=True
     )
 
@@ -592,4 +605,3 @@ if __name__ == "__main__":
     asyncio.run(
         serve(app, config)
     )
-
