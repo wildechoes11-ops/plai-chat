@@ -1,4 +1,4 @@
-
+```python id="r5m2qp"
 import os
 import json
 import uuid
@@ -306,7 +306,7 @@ async def cookie_refresh_loop():
                     force_refresh=True
                 )
 
-        except Exception as e:
+        except Exception:
 
             print(
                 "\n========== REFRESH LOOP ERROR ==========",
@@ -328,16 +328,18 @@ async def startup():
         flush=True
     )
 
-    # Initialize immediately
-    await initialize_app()
+    # Run init in background
+    asyncio.create_task(
+        initialize_app()
+    )
 
-    # Background refresh
+    # Background refresh loop
     asyncio.create_task(
         cookie_refresh_loop()
     )
 
     print(
-        "Background refresh loop started",
+        "Startup tasks launched",
         flush=True
     )
 
@@ -587,4 +589,4 @@ if __name__ == "__main__":
             )
         )
     )
-
+```
