@@ -3,6 +3,7 @@ import os
 import json
 import uuid
 import time
+import asyncio
 import traceback
 
 from quart import Quart, request, Response, jsonify
@@ -101,7 +102,10 @@ async def initialize_app(
 
         load_cookie_timestamp()
 
-        # Existing cookies
+        # =========================
+        # EXISTING COOKIES
+        # =========================
+
         if (
             os.path.exists(COOKIE_FILE)
             and not cookies_expired()
@@ -128,7 +132,7 @@ async def initialize_app(
             return
 
         # =========================
-        # Refresh cookies
+        # REFRESH COOKIES
         # =========================
 
         print(
@@ -280,6 +284,65 @@ async def ensure_app():
 
 
 # =========================
+# BACKGROUND REFRESH LOOP
+# =========================
+
+async def cookie_refresh_loop():
+
+    while True:
+
+        try:
+
+            await asyncio.sleep(300)
+
+            if cookies_expired():
+
+                print(
+                    "\n========== AUTO REFRESH ==========",
+                    flush=True
+                )
+
+                await initialize_app(
+                    force_refresh=True
+                )
+
+        except Exception as e:
+
+            print(
+                "\n========== REFRESH LOOP ERROR ==========",
+                flush=True
+            )
+
+            traceback.print_exc()
+
+
+# =========================
+# STARTUP
+# =========================
+
+@app.before_serving
+async def startup():
+
+    print(
+        "\n========== SERVER STARTUP ==========",
+        flush=True
+    )
+
+    # Initialize immediately
+    await initialize_app()
+
+    # Background refresh
+    asyncio.create_task(
+        cookie_refresh_loop()
+    )
+
+    print(
+        "Background refresh loop started",
+        flush=True
+    )
+
+
+# =========================
 # MODEL HELPER
 # =========================
 
@@ -335,20 +398,7 @@ async def models():
 )
 async def chat_completions():
 
-    # FIXED
     await ensure_app()
-
-    if cookies_expired():
-
-        print(
-            "Cookies nearing expiration...",
-            flush=True
-        )
-
-        # FIXED
-        await initialize_app(
-            force_refresh=True
-        )
 
     body = await request.get_json()
 
@@ -437,6 +487,8 @@ async def chat_completions():
                         + json.dumps(payload)
                         + "\n\n"
                     )
+
+                    await asyncio.sleep(0)
 
                 done_payload = {
                     "id": completion_id,
