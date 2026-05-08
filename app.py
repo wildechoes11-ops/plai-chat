@@ -1,9 +1,9 @@
+
 import os
 import json
-import asyncio
-import traceback
 import uuid
 import time
+import traceback
 
 from quart import Quart, request, Response, jsonify
 import httpx
@@ -29,7 +29,12 @@ chat_app = None
 app = Quart(__name__)
 
 
+# =========================
+# COOKIE HELPERS
+# =========================
+
 def cookies_expired():
+
     global cookie_created_at
 
     if not os.path.exists(COOKIE_FILE):
@@ -43,11 +48,13 @@ def cookies_expired():
 
 
 def save_cookies(cookies):
+
     global cookie_created_at
 
     cookie_created_at = time.time()
 
     with open(COOKIE_FILE, "w") as f:
+
         json.dump({
             "cookies": cookies,
             "created_at": cookie_created_at
@@ -55,12 +62,14 @@ def save_cookies(cookies):
 
 
 def load_cookie_timestamp():
+
     global cookie_created_at
 
     if not os.path.exists(COOKIE_FILE):
         return
 
     try:
+
         with open(COOKIE_FILE, "r") as f:
             data = json.load(f)
 
@@ -73,42 +82,94 @@ def load_cookie_timestamp():
         cookie_created_at = 0
 
 
-def initialize_app(force_refresh=False):
+# =========================
+# INIT
+# =========================
+
+async def initialize_app(
+    force_refresh=False
+):
+
     global chat_app
 
     try:
+
+        print(
+            "\n========== INITIALIZING ==========",
+            flush=True
+        )
+
         load_cookie_timestamp()
 
+        # Existing cookies
         if (
             os.path.exists(COOKIE_FILE)
             and not cookies_expired()
             and not force_refresh
         ):
-            print("Using existing cookies...")
 
-            chat_app = ChatbotChatApp.from_cookie_file(
-                COOKIE_FILE
+            print(
+                "Using existing cookies...",
+                flush=True
+            )
+
+            chat_app = (
+                ChatbotChatApp
+                .from_cookie_file(
+                    COOKIE_FILE
+                )
+            )
+
+            print(
+                "Loaded existing session",
+                flush=True
             )
 
             return
 
-        print("\n========== REFRESHING COOKIES ==========")
+        # =========================
+        # Refresh cookies
+        # =========================
 
-        token = asyncio.run(
-            _solve(
-                "https://plai.chat",
-                "0x4AAAAAAC-lISmo_bU02UL9"
-            )
+        print(
+            "\n========== REFRESHING COOKIES ==========",
+            flush=True
+        )
+
+        print(
+            "Calling solver...",
+            flush=True
+        )
+
+        token = await _solve(
+            "https://plai.chat",
+            "0x4AAAAAAC-lISmo_bU02UL9"
+        )
+
+        print(
+            "Solver finished",
+            flush=True
         )
 
         if not token:
+
             raise Exception(
-                "Failed to solve Turnstile"
+                "Solver returned empty token"
             )
 
-        print("Turnstile solved")
+        print(
+            "Opening HTTP client...",
+            flush=True
+        )
 
-        with httpx.Client(timeout=120) as cx:
+        with httpx.Client(
+            timeout=120
+        ) as cx:
+
+            print(
+                "Sending verify request...",
+                flush=True
+            )
 
             verify = cx.post(
                 "https://plai.chat/api/web/auth/anonymous-verify",
@@ -118,19 +179,24 @@ def initialize_app(force_refresh=False):
                 headers={
                     "User-Agent": (
                         "Mozilla/5.0 "
-                        "(Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) "
-                        "Chrome/148.0.0.0 "
-                        "Safari/537.36"
+                        "(Windows NT 10.0; Win64; x64)"
                     ),
                     "Origin": "https://plai.chat",
                     "Referer": "https://plai.chat/"
                 }
             )
 
-            print("Verify status:",
-                  verify.status_code)
+            print(
+                "Verify status:",
+                verify.status_code,
+                flush=True
+            )
+
+            print(
+                "Verify body:",
+                verify.text[:300],
+                flush=True
+            )
 
             if verify.status_code != 200:
 
@@ -141,33 +207,84 @@ def initialize_app(force_refresh=False):
 
             cookies = {
                 k: v
-                for k, v in cx.cookies.items()
+                for k, v
+                in cx.cookies.items()
             }
+
+        print(
+            "Cookies received:",
+            cookies,
+            flush=True
+        )
+
+        if "web_anon_session" not in cookies:
+
+            raise Exception(
+                "web_anon_session missing"
+            )
 
         save_cookies(cookies)
 
-        chat_app = ChatbotChatApp.from_cookie_file(
-            COOKIE_FILE
+        print(
+            "Creating chat app...",
+            flush=True
         )
 
-        print("Cookies refreshed successfully")
+        chat_app = (
+            ChatbotChatApp
+            .from_cookie_file(
+                COOKIE_FILE
+            )
+        )
 
-    except Exception:
-        print("\n========== INIT ERROR ==========")
+        print(
+            "SUCCESSFULLY INITIALIZED",
+            flush=True
+        )
+
+    except Exception as e:
+
+        print(
+            "\n========== INIT ERROR ==========",
+            flush=True
+        )
+
+        print(
+            "ERROR:",
+            str(e),
+            flush=True
+        )
+
         traceback.print_exc()
 
+        chat_app = None
 
-def ensure_app():
+
+# =========================
+# ENSURE APP
+# =========================
+
+async def ensure_app():
+
     global chat_app
 
     if chat_app is None:
-        initialize_app()
+
+        await initialize_app()
 
     if chat_app is None:
-        raise Exception("Failed to initialize app")
 
+        raise Exception(
+            "Failed to initialize app"
+        )
+
+
+# =========================
+# MODEL HELPER
+# =========================
 
 def normalize_model(model: str):
+
     if model in FREE_MODELS:
         return FREE_MODELS[model]
 
@@ -177,19 +294,28 @@ def normalize_model(model: str):
     return FREE_MODELS["nano"]
 
 
+# =========================
+# ROUTES
+# =========================
+
 @app.route("/")
 async def home():
+
     return {
         "status": "running",
-        "models": list(FREE_MODELS.values())
+        "models": list(
+            FREE_MODELS.values()
+        )
     }
 
 
 @app.route("/v1/models")
 async def models():
+
     data = []
 
     for model in FREE_MODELS.values():
+
         data.append({
             "id": model,
             "object": "model",
@@ -203,14 +329,26 @@ async def models():
     }
 
 
-@app.route("/v1/chat/completions", methods=["POST"])
+@app.route(
+    "/v1/chat/completions",
+    methods=["POST"]
+)
 async def chat_completions():
 
-    ensure_app()
+    # FIXED
+    await ensure_app()
 
     if cookies_expired():
-        print("Cookies nearing expiration, refreshing...")
-        initialize_app(force_refresh=True)
+
+        print(
+            "Cookies nearing expiration...",
+            flush=True
+        )
+
+        # FIXED
+        await initialize_app(
+            force_refresh=True
+        )
 
     body = await request.get_json()
 
@@ -218,11 +356,18 @@ async def chat_completions():
         body.get("model", "nano")
     )
 
-    stream = body.get("stream", False)
+    stream = body.get(
+        "stream",
+        False
+    )
 
-    messages = body.get("messages", [])
+    messages = body.get(
+        "messages",
+        []
+    )
 
     if not messages:
+
         return jsonify({
             "error": "messages required"
         }), 400
@@ -235,6 +380,7 @@ async def chat_completions():
         content = msg.get("content")
 
         if role and content:
+
             api_history.append({
                 "role": role,
                 "content": content
@@ -242,13 +388,20 @@ async def chat_completions():
 
     latest = messages[-1]["content"]
 
-    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    completion_id = (
+        f"chatcmpl-{uuid.uuid4().hex}"
+    )
+
+    # =========================
+    # STREAMING
+    # =========================
 
     if stream:
 
         async def generate():
 
             try:
+
                 gen = chat_app.send_message(
                     latest,
                     model=model,
@@ -265,7 +418,9 @@ async def chat_completions():
 
                     payload = {
                         "id": completion_id,
-                        "object": "chat.completion.chunk",
+                        "object": (
+                            "chat.completion.chunk"
+                        ),
                         "created": int(time.time()),
                         "model": model,
                         "choices": [{
@@ -278,14 +433,16 @@ async def chat_completions():
                     }
 
                     yield (
-                        f"data: {json.dumps(payload)}\n\n"
+                        "data: "
+                        + json.dumps(payload)
+                        + "\n\n"
                     )
-
-                    await asyncio.sleep(0)
 
                 done_payload = {
                     "id": completion_id,
-                    "object": "chat.completion.chunk",
+                    "object": (
+                        "chat.completion.chunk"
+                    ),
                     "created": int(time.time()),
                     "model": model,
                     "choices": [{
@@ -296,7 +453,9 @@ async def chat_completions():
                 }
 
                 yield (
-                    f"data: {json.dumps(done_payload)}\n\n"
+                    "data: "
+                    + json.dumps(done_payload)
+                    + "\n\n"
                 )
 
                 yield "data: [DONE]\n\n"
@@ -305,12 +464,12 @@ async def chat_completions():
 
                 traceback.print_exc()
 
-                error_payload = {
-                    "error": str(e)
-                }
-
                 yield (
-                    f"data: {json.dumps(error_payload)}\n\n"
+                    "data: "
+                    + json.dumps({
+                        "error": str(e)
+                    })
+                    + "\n\n"
                 )
 
         return Response(
@@ -322,6 +481,10 @@ async def chat_completions():
                 "X-Accel-Buffering": "no"
             }
         )
+
+    # =========================
+    # NORMAL RESPONSE
+    # =========================
 
     response_text = ""
 
@@ -357,9 +520,19 @@ async def chat_completions():
     }
 
 
+# =========================
+# START
+# =========================
+
 if __name__ == "__main__":
 
     app.run(
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000))
+        port=int(
+            os.environ.get(
+                "PORT",
+                10000
+            )
+        )
     )
+
